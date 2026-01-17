@@ -1278,8 +1278,22 @@ class MDViewerStandalone {
             return;
         }
         
-        // 生成目录列表
-        const tocItems = [];
+        // 构建层级结构
+        const tocTree = this.buildTocTree(headings);
+        
+        // 渲染目录树
+        this.tocContent.innerHTML = '';
+        this.renderTocTree(tocTree, this.tocContent);
+        
+        // 监听预览区域滚动，高亮当前位置的目录项
+        this.setupTocScrollSpy();
+    }
+    
+    // 构建目录树结构
+    buildTocTree(headings) {
+        const tree = [];
+        const stack = [{ level: 0, children: tree }];
+        
         headings.forEach((heading, index) => {
             const level = parseInt(heading.tagName.charAt(1));
             const text = heading.textContent;
@@ -1290,29 +1304,80 @@ class MDViewerStandalone {
                 heading.id = id;
             }
             
-            tocItems.push(`
-                <a class="toc-item toc-h${level}" href="#${id}" data-target="${id}" title="${text}">
-                    ${text}
-                </a>
-            `);
+            const node = {
+                level: level,
+                text: text,
+                id: id,
+                children: []
+            };
+            
+            // 找到父节点
+            while (stack.length > 1 && stack[stack.length - 1].level >= level) {
+                stack.pop();
+            }
+            
+            stack[stack.length - 1].children.push(node);
+            stack.push(node);
         });
         
-        this.tocContent.innerHTML = tocItems.join('');
-        
-        // 绑定点击事件
-        this.tocContent.querySelectorAll('.toc-item').forEach(item => {
-            item.addEventListener('click', (e) => {
+        return tree;
+    }
+    
+    // 渲染目录树
+    renderTocTree(nodes, container) {
+        nodes.forEach(node => {
+            const hasChildren = node.children && node.children.length > 0;
+            
+            const itemWrapper = document.createElement('div');
+            itemWrapper.className = 'toc-item-wrapper';
+            
+            const itemRow = document.createElement('div');
+            itemRow.className = 'toc-item-row';
+            
+            // 折叠按钮（仅当有子节点时显示）
+            if (hasChildren) {
+                const collapseBtn = document.createElement('span');
+                collapseBtn.className = 'toc-collapse-btn';
+                collapseBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+                collapseBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const childrenContainer = itemWrapper.querySelector('.toc-children');
+                    const isCollapsed = childrenContainer.classList.contains('collapsed');
+                    
+                    if (isCollapsed) {
+                        childrenContainer.classList.remove('collapsed');
+                        collapseBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+                    } else {
+                        childrenContainer.classList.add('collapsed');
+                        collapseBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+                    }
+                });
+                itemRow.appendChild(collapseBtn);
+            } else {
+                // 占位符保持对齐
+                const placeholder = document.createElement('span');
+                placeholder.className = 'toc-collapse-placeholder';
+                itemRow.appendChild(placeholder);
+            }
+            
+            // 目录链接
+            const link = document.createElement('a');
+            link.className = `toc-item toc-h${node.level}`;
+            link.href = `#${node.id}`;
+            link.dataset.target = node.id;
+            link.title = node.text;
+            link.textContent = node.text;
+            
+            link.addEventListener('click', (e) => {
                 e.preventDefault();
-                const targetId = item.dataset.target;
-                const targetElement = document.getElementById(targetId);
+                const targetElement = document.getElementById(node.id);
                 
                 if (targetElement) {
-                    // 滚动到目标位置
                     targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     
                     // 高亮当前目录项
                     this.tocContent.querySelectorAll('.toc-item').forEach(i => i.classList.remove('active'));
-                    item.classList.add('active');
+                    link.classList.add('active');
                     
                     // 闪烁效果
                     targetElement.style.transition = 'background-color 0.3s';
@@ -1322,10 +1387,20 @@ class MDViewerStandalone {
                     }, 1000);
                 }
             });
+            
+            itemRow.appendChild(link);
+            itemWrapper.appendChild(itemRow);
+            
+            // 子节点容器
+            if (hasChildren) {
+                const childrenContainer = document.createElement('div');
+                childrenContainer.className = 'toc-children';
+                this.renderTocTree(node.children, childrenContainer);
+                itemWrapper.appendChild(childrenContainer);
+            }
+            
+            container.appendChild(itemWrapper);
         });
-        
-        // 监听预览区域滚动，高亮当前位置的目录项
-        this.setupTocScrollSpy();
     }
     
     // 设置目录滚动监听
@@ -1494,15 +1569,48 @@ class MDViewerStandalone {
     renderGlobalSearchResults(query) {
         this.globalSearchResults.innerHTML = '';
         
+        // 添加工具栏
+        const toolbar = document.createElement('div');
+        toolbar.className = 'search-results-toolbar';
+        toolbar.innerHTML = `
+            <button class="btn-small" id="expandAllResults" title="展开全部">
+                <i class="fas fa-expand-alt"></i> 展开
+            </button>
+            <button class="btn-small" id="collapseAllResults" title="折叠全部">
+                <i class="fas fa-compress-alt"></i> 折叠
+            </button>
+        `;
+        this.globalSearchResults.appendChild(toolbar);
+        
+        // 绑定展开/折叠全部按钮
+        toolbar.querySelector('#expandAllResults').addEventListener('click', () => {
+            this.globalSearchResults.querySelectorAll('.search-result-matches').forEach(matchList => {
+                matchList.classList.remove('collapsed');
+            });
+            this.globalSearchResults.querySelectorAll('.file-collapse-btn').forEach(btn => {
+                btn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+            });
+        });
+        
+        toolbar.querySelector('#collapseAllResults').addEventListener('click', () => {
+            this.globalSearchResults.querySelectorAll('.search-result-matches').forEach(matchList => {
+                matchList.classList.add('collapsed');
+            });
+            this.globalSearchResults.querySelectorAll('.file-collapse-btn').forEach(btn => {
+                btn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+            });
+        });
+        
         this.globalSearchResultsData.forEach(fileResult => {
             // 创建文件分组
             const fileGroup = document.createElement('div');
             fileGroup.className = 'search-result-file';
             
-            // 文件标题
+            // 文件标题（可折叠）
             const fileHeader = document.createElement('div');
             fileHeader.className = 'search-result-file-header';
             fileHeader.innerHTML = `
+                <span class="file-collapse-btn"><i class="fas fa-chevron-down"></i></span>
                 <i class="fas fa-file-alt"></i>
                 <span class="file-path">${this.escapeHtml(fileResult.filePath)}</span>
                 <span class="match-count">(${fileResult.matches.length} 个匹配)</span>
@@ -1551,6 +1659,21 @@ class MDViewerStandalone {
             });
             
             fileGroup.appendChild(matchList);
+            
+            // 绑定文件标题的折叠事件
+            const collapseBtn = fileHeader.querySelector('.file-collapse-btn');
+            fileHeader.addEventListener('click', () => {
+                const isCollapsed = matchList.classList.contains('collapsed');
+                
+                if (isCollapsed) {
+                    matchList.classList.remove('collapsed');
+                    collapseBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+                } else {
+                    matchList.classList.add('collapsed');
+                    collapseBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+                }
+            });
+            
             this.globalSearchResults.appendChild(fileGroup);
         });
     }
