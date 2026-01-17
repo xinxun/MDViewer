@@ -633,12 +633,13 @@
 
 .diagram-zoom-modal .zoom-diagram {
     display: block;
-    margin: 0 auto;
-    width: 100%;
+    width: auto;
     height: auto;
-    min-width: 100%;
+    max-width: none;
+    max-height: none;
     pointer-events: none; /* 防止图表内部元素干扰拖动 */
     transition: transform 0.1s ease-out; /* 平滑的变换动画 */
+    transform-origin: center center;
 }
 
 .diagram-zoom-modal .zoom-close {

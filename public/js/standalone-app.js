@@ -1828,7 +1828,7 @@ class MDViewerStandalone {
         console.log('[Zoom] 打开缩放模态框');
         console.log('[Zoom] 图表元素:', diagramElement);
         
-        // 重置拖拽位置
+        // 重置拖拽位置（初始居中，所以为 0）
         this.translateX = 0;
         this.translateY = 0;
         this.isDragging = false;
@@ -1840,7 +1840,16 @@ class MDViewerStandalone {
         clone.style.maxWidth = 'none';
         clone.style.maxHeight = 'none';
         clone.style.margin = '0';
+        clone.style.width = 'auto';
+        clone.style.height = 'auto';
         clone.classList.add('zoom-diagram');
+        
+        // 确保 SVG 不会撑满容器，保持原始尺寸以便居中
+        const svg = clone.querySelector('svg');
+        if (svg) {
+            svg.style.display = 'block';
+            svg.style.margin = '0 auto';
+        }
         
         this.zoomContent.innerHTML = '';
         this.zoomContent.appendChild(clone);
@@ -1851,7 +1860,7 @@ class MDViewerStandalone {
         this.zoomModal.classList.add('show');
         document.body.style.overflow = 'hidden';
         
-        // 延迟后智能设置初始缩放
+        // 延迟后智能设置初始缩放（同时保持居中）
         setTimeout(() => {
             this.smartResetZoom();
         }, 100);
