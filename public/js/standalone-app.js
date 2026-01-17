@@ -10,6 +10,7 @@ class MDViewerStandalone {
         this.manualEncoding = 'auto';
         this.splitRatio = 50; // 分栏比例（百分比）
         this.isResizing = false;
+        this.basePath = ''; // 用户设置的文件夹完整路径前缀
         this.dbName = 'md-viewer-db';
         this.storeName = 'folders';
         this.recentFoldersStore = 'recentFolders';
@@ -112,8 +113,12 @@ class MDViewerStandalone {
                         
                         if (permission === 'granted') {
                             this.directoryHandle = handle;
+                            this.loadBasePath(); // 加载基础路径
                             this.showToast(`已自动打开上次的文件夹: ${handle.name}`, 'success');
                             await this.loadFiles();
+                            // 显示设置路径按钮
+                            const setBasePathBtn = document.getElementById('setBasePathBtn');
+                            if (setBasePathBtn) setBasePathBtn.style.display = '';
                             // 自动打开上次的文件
                             await this.restoreLastFile();
                         } else if (permission === 'prompt') {
@@ -121,8 +126,12 @@ class MDViewerStandalone {
                             const newPermission = await handle.requestPermission(options);
                             if (newPermission === 'granted') {
                                 this.directoryHandle = handle;
+                                this.loadBasePath(); // 加载基础路径
                                 this.showToast(`已恢复上次的文件夹: ${handle.name}`, 'success');
                                 await this.loadFiles();
+                                // 显示设置路径按钮
+                                const setBasePathBtn = document.getElementById('setBasePathBtn');
+                                if (setBasePathBtn) setBasePathBtn.style.display = '';
                                 // 自动打开上次的文件
                                 await this.restoreLastFile();
                             } else {
@@ -212,17 +221,81 @@ class MDViewerStandalone {
     
     /**
      * 获取当前文件的完整路径
-     * @returns {string} 完整路径（包括文件夹名）
+     * @param {boolean} useSystemPath - 是否返回完整系统路径
+     * @returns {string} 完整路径
      */
-    getFullFilePath() {
+    getFullFilePath(useSystemPath = true) {
         const relativePath = this.currentFileEl.textContent;
         if (!relativePath || relativePath === '请打开文件夹并选择 Markdown 文件') {
             return '';
         }
         
+        // 如果设置了基础路径，返回完整系统路径
+        if (useSystemPath && this.basePath) {
+            // 规范化路径分隔符
+            const normalizedBase = this.basePath.replace(/\/+$/, ''); // 移除尾部斜杠
+            return `${normalizedBase}/${relativePath}`.replace(/\//g, '\\'); // Windows 风格
+        }
+        
         // 组合文件夹名和相对路径
         const folderName = this.directoryHandle ? this.directoryHandle.name : '';
         return folderName ? `${folderName}/${relativePath}` : relativePath;
+    }
+    
+    /**
+     * 获取当前文件所在目录的完整路径
+     * @returns {string} 目录路径
+     */
+    getFullDirectoryPath() {
+        const fullPath = this.getFullFilePath(true);
+        if (!fullPath) return '';
+        
+        // 获取目录部分
+        const lastSep = Math.max(fullPath.lastIndexOf('/'), fullPath.lastIndexOf('\\'));
+        return lastSep > 0 ? fullPath.substring(0, lastSep) : fullPath;
+    }
+    
+    /**
+     * 设置文件夹的基础路径（完整系统路径）
+     */
+    setBasePath() {
+        const folderName = this.directoryHandle ? this.directoryHandle.name : '';
+        const savedPath = localStorage.getItem(`md-viewer-base-path-${folderName}`);
+        
+        const currentPath = savedPath || this.basePath || '';
+        const newPath = prompt(
+            `请输入文件夹 "${folderName}" 的完整系统路径：\n\n` +
+            `例如: C:\\Users\\Documents\\${folderName}\n` +
+            `或: /home/user/documents/${folderName}\n\n` +
+            `设置后，复制的路径将是完整的系统路径，可直接在文件管理器中打开。`,
+            currentPath
+        );
+        
+        if (newPath !== null) {
+            this.basePath = newPath.trim();
+            if (this.basePath) {
+                localStorage.setItem(`md-viewer-base-path-${folderName}`, this.basePath);
+                this.showToast('基础路径已设置', 'success');
+                
+                // 更新当前文件的提示
+                if (this.currentFileHandle) {
+                    this.currentFileEl.title = `点击复制路径: ${this.getFullFilePath()}`;
+                }
+            } else {
+                localStorage.removeItem(`md-viewer-base-path-${folderName}`);
+                this.showToast('基础路径已清除', 'info');
+            }
+        }
+    }
+    
+    /**
+     * 从 localStorage 加载基础路径
+     */
+    loadBasePath() {
+        const folderName = this.directoryHandle ? this.directoryHandle.name : '';
+        if (folderName) {
+            this.basePath = localStorage.getItem(`md-viewer-base-path-${folderName}`) || '';
+        }
     }
     
     /**
@@ -805,6 +878,14 @@ class MDViewerStandalone {
             });
         }
         
+        // 设置基础路径按钮
+        const setBasePathBtn = document.getElementById('setBasePathBtn');
+        if (setBasePathBtn) {
+            setBasePathBtn.addEventListener('click', () => {
+                this.setBasePath();
+            });
+        }
+        
         // 点击文件名显示路径详情
         if (this.currentFileEl) {
             this.currentFileEl.addEventListener('click', () => {
@@ -984,8 +1065,27 @@ class MDViewerStandalone {
             await this.saveFolderHandle(this.directoryHandle);
             // 添加到最近文件夹列表
             await this.addToRecentFolders(this.directoryHandle);
+            // 加载基础路径设置
+            this.loadBasePath();
             this.showToast('文件夹已打开: ' + this.directoryHandle.name, 'success');
             await this.loadFiles();
+            
+            // 显示设置路径按钮
+            const setBasePathBtn = document.getElementById('setBasePathBtn');
+            if (setBasePathBtn) {
+                setBasePathBtn.style.display = '';
+            }
+            
+            // 如果没有设置基础路径，提示用户设置
+            if (!this.basePath) {
+                const shouldSet = confirm(
+                    `是否设置文件夹 "${this.directoryHandle.name}" 的完整系统路径？\n\n` +
+                    `设置后，复制的路径将是完整的文件系统路径，可以直接在文件管理器中打开。`
+                );
+                if (shouldSet) {
+                    this.setBasePath();
+                }
+            }
         } catch (error) {
             if (error.name !== 'AbortError') {
                 this.showToast('打开文件夹失败: ' + error.message, 'error');
