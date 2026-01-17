@@ -587,6 +587,10 @@ body {
     background: transparent;
     z-index: 10;
     user-select: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
 
 .split-resizer::before {
@@ -607,24 +611,49 @@ body {
     width: 3px;
 }
 
-.split-resizer::after {
-    content: '⋮';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 16px;
-    color: var(--text-muted);
+/* 同步按钮容器 */
+.sync-buttons {
+    position: relative;
+    z-index: 11;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     background: var(--content-bg);
-    padding: 8px 4px;
-    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 6px 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     opacity: 0;
-    transition: var(--transition);
-    pointer-events: none;
+    transition: opacity 0.2s;
 }
 
-.split-resizer:hover::after {
+.split-resizer:hover .sync-buttons {
     opacity: 1;
+}
+
+.sync-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: var(--bg-color);
+    color: var(--text-muted);
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    font-size: 12px;
+}
+
+.sync-btn:hover {
+    background: var(--primary-color);
+    color: white;
+    transform: scale(1.1);
+}
+
+.sync-btn:active {
+    transform: scale(0.95);
 }
 
 /* 拖动时的效果 */

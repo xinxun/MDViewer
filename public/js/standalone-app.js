@@ -988,6 +988,24 @@ class MDViewerStandalone {
             });
         }
         
+        // 分栏同步按钮
+        const syncLeftToRight = document.getElementById('syncLeftToRight');
+        const syncRightToLeft = document.getElementById('syncRightToLeft');
+        
+        if (syncLeftToRight) {
+            syncLeftToRight.addEventListener('click', (e) => {
+                e.stopPropagation(); // 防止触发拖动
+                this.syncEditorToPreview();
+            });
+        }
+        
+        if (syncRightToLeft) {
+            syncRightToLeft.addEventListener('click', (e) => {
+                e.stopPropagation(); // 防止触发拖动
+                this.syncPreviewToEditor();
+            });
+        }
+        
         // 编码选择
         if (this.encodingSelect) {
             this.encodingSelect.addEventListener('change', (e) => {
@@ -1632,6 +1650,180 @@ class MDViewerStandalone {
             .replace(/\/$/, '');  // 移除结尾斜杠
     }
 
+    // ==================== 分栏同步功能 ====================
+    
+    /**
+     * 将编辑器滚动位置同步到预览区
+     * 基于编辑器当前行号找到对应的预览位置
+     */
+    syncEditorToPreview() {
+        if (this.viewMode !== 'split') return;
+        
+        const editorScrollRatio = this.editor.scrollTop / (this.editor.scrollHeight - this.editor.clientHeight);
+        
+        // 计算编辑器当前可见的行号
+        const lineHeight = this.getEditorLineHeight();
+        const firstVisibleLine = Math.floor(this.editor.scrollTop / lineHeight);
+        
+        // 获取编辑器内容的行
+        const lines = this.editor.value.substring(0, this.editor.selectionStart || 0).split('\n');
+        const currentLineIndex = lines.length - 1;
+        
+        // 尝试找到对应的标题位置
+        const headingMatch = this.findNearestHeadingFromLine(firstVisibleLine);
+        
+        if (headingMatch) {
+            const targetElement = document.getElementById(headingMatch.id);
+            if (targetElement) {
+                targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                this.showToast('已同步到预览区', 'success');
+                return;
+            }
+        }
+        
+        // 如果没有找到标题，使用比例同步
+        const previewScrollTop = editorScrollRatio * (this.preview.scrollHeight - this.preview.clientHeight);
+        this.preview.parentElement.scrollTo({
+            top: previewScrollTop,
+            behavior: 'smooth'
+        });
+        this.showToast('已同步到预览区', 'success');
+    }
+    
+    /**
+     * 将预览区滚动位置同步到编辑器
+     * 基于预览区当前可见的标题找到对应的编辑器位置
+     */
+    syncPreviewToEditor() {
+        if (this.viewMode !== 'split') return;
+        
+        // 找到预览区当前可见的第一个标题
+        const previewContainer = this.preview.parentElement;
+        const headings = this.preview.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        
+        let visibleHeading = null;
+        const containerTop = previewContainer.scrollTop;
+        
+        for (const heading of headings) {
+            const rect = heading.getBoundingClientRect();
+            const containerRect = previewContainer.getBoundingClientRect();
+            const relativeTop = rect.top - containerRect.top;
+            
+            if (relativeTop >= -50 && relativeTop < previewContainer.clientHeight / 2) {
+                visibleHeading = heading;
+                break;
+            }
+        }
+        
+        if (visibleHeading) {
+            // 在编辑器中找到对应的标题行
+            const headingText = visibleHeading.textContent;
+            const headingLevel = parseInt(visibleHeading.tagName.charAt(1));
+            const lineIndex = this.findHeadingLineInEditor(headingText, headingLevel);
+            
+            if (lineIndex >= 0) {
+                this.scrollEditorToLine(lineIndex);
+                this.showToast('已同步到编辑器', 'success');
+                return;
+            }
+        }
+        
+        // 使用比例同步
+        const previewScrollRatio = previewContainer.scrollTop / (previewContainer.scrollHeight - previewContainer.clientHeight);
+        const editorScrollTop = previewScrollRatio * (this.editor.scrollHeight - this.editor.clientHeight);
+        this.editor.scrollTo({
+            top: editorScrollTop,
+            behavior: 'smooth'
+        });
+        this.showToast('已同步到编辑器', 'success');
+    }
+    
+    /**
+     * 获取编辑器的行高
+     */
+    getEditorLineHeight() {
+        const style = window.getComputedStyle(this.editor);
+        return parseFloat(style.lineHeight) || 20;
+    }
+    
+    /**
+     * 从编辑器行号找到最近的标题
+     */
+    findNearestHeadingFromLine(lineNumber) {
+        const lines = this.editor.value.split('\n');
+        
+        // 从当前行向上查找标题
+        for (let i = Math.min(lineNumber, lines.length - 1); i >= 0; i--) {
+            const line = lines[i];
+            const match = line.match(/^(#{1,6})\s+(.+)/);
+            if (match) {
+                const text = match[2].trim();
+                const slug = text.toLowerCase()
+                    .replace(/[\s]+/g, '-')
+                    .replace(/[^\w\u4e00-\u9fa5-]/g, '');
+                return { id: slug, text: text, level: match[1].length };
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * 在编辑器中查找标题所在行
+     */
+    findHeadingLineInEditor(headingText, level) {
+        const lines = this.editor.value.split('\n');
+        const prefix = '#'.repeat(level);
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            // 匹配标题格式
+            if (line.startsWith(prefix + ' ')) {
+                const text = line.substring(prefix.length + 1).trim();
+                // 简化比较（去除可能的格式差异）
+                if (text === headingText || 
+                    text.replace(/[*_`]/g, '') === headingText.replace(/[*_`]/g, '')) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+    
+    /**
+     * 滚动编辑器到指定行
+     */
+    scrollEditorToLine(lineIndex) {
+        const lines = this.editor.value.split('\n');
+        let charIndex = 0;
+        
+        for (let i = 0; i < lineIndex && i < lines.length; i++) {
+            charIndex += lines[i].length + 1; // +1 for newline
+        }
+        
+        // 设置光标位置
+        this.editor.focus();
+        this.editor.setSelectionRange(charIndex, charIndex);
+        
+        // 计算滚动位置
+        const lineHeight = this.getEditorLineHeight();
+        const scrollTop = lineIndex * lineHeight - this.editor.clientHeight / 3;
+        
+        this.editor.scrollTo({
+            top: Math.max(0, scrollTop),
+            behavior: 'smooth'
+        });
+    }
+    
+    /**
+     * 滚动编辑器到指定标题（供目录点击使用）
+     */
+    scrollEditorToHeading(headingText, headingLevel) {
+        const lineIndex = this.findHeadingLineInEditor(headingText, headingLevel);
+        if (lineIndex >= 0) {
+            this.scrollEditorToLine(lineIndex);
+        }
+    }
+
     // ==================== 目录功能 ====================
     
     // 切换目录显示
@@ -1780,6 +1972,11 @@ class MDViewerStandalone {
                     setTimeout(() => {
                         targetElement.style.backgroundColor = '';
                     }, 1000);
+                    
+                    // 分栏模式下同步编辑器位置
+                    if (this.viewMode === 'split') {
+                        this.scrollEditorToHeading(node.text, node.level);
+                    }
                 }
             });
             

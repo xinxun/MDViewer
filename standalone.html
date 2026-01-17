@@ -137,8 +137,17 @@
                     <textarea id="editor" placeholder="在这里编写 Markdown..."></textarea>
                 </div>
 
-                <!-- 分栏调整器 -->
-                <div class="split-resizer" id="splitResizer" style="display: none;"></div>
+                <!-- 分栏调整器（含同步按钮） -->
+                <div class="split-resizer" id="splitResizer" style="display: none;">
+                    <div class="sync-buttons">
+                        <button class="sync-btn" id="syncLeftToRight" title="编辑器位置 → 预览区">
+                            <i class="fas fa-arrow-right"></i>
+                        </button>
+                        <button class="sync-btn" id="syncRightToLeft" title="预览区位置 → 编辑器">
+                            <i class="fas fa-arrow-left"></i>
+                        </button>
+                    </div>
+                </div>
 
                 <!-- 预览区 -->
                 <div class="preview-container" id="previewContainer" style="display: none;">
