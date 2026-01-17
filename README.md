@@ -1,6 +1,6 @@
 # MD Viewer - Markdown 阅读器
 
-在线访问（GitHub Pages）：https://<你的用户名>.github.io/MDViewer/
+在线访问（GitHub Pages）：https://xinxun.github.io/MDViewer/
 
 一个美观、功能丰富的 Markdown 阅读器和编辑器。支持两种使用方式：
 
