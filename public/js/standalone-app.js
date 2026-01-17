@@ -505,11 +505,83 @@ class MDViewerStandalone {
         
         const renderer = new marked.Renderer();
         
+        // Mermaid 代码预处理 - 自动修复常见语法问题
+        this.preprocessMermaid = (code) => {
+            // 处理节点标签中的多行文本和特殊字符
+            // 匹配 ID[...] 或 ID["..."] 格式的节点定义
+            let result = code;
+            
+            // 1. 处理 subgraph 标签 - subgraph ID[Label] 或 subgraph ID["Label"]
+            result = result.replace(/subgraph\s+(\w+)\[([^\]]+)\]/g, (match, id, label) => {
+                // 如果标签已经用引号包裹，保持不变
+                if (label.startsWith('"') && label.endsWith('"')) {
+                    return match;
+                }
+                // 将换行转换为 <br>，并用引号包裹
+                const fixedLabel = label.trim().replace(/\n/g, '<br>');
+                return `subgraph ${id}["${fixedLabel}"]`;
+            });
+            
+            // 2. 处理普通节点 ID[Label] - 多行标签
+            // 使用更宽松的匹配，处理跨行的情况
+            result = result.replace(/(\w+)\[((?:[^\[\]]|\n)+)\]/g, (match, id, label) => {
+                // 跳过已经是 subgraph 的
+                if (result.includes(`subgraph ${id}[`)) {
+                    // 检查这个匹配是否就是 subgraph 的一部分
+                    const beforeMatch = result.substring(0, result.indexOf(match));
+                    if (beforeMatch.endsWith('subgraph ') || beforeMatch.match(/subgraph\s+$/)) {
+                        return match;
+                    }
+                }
+                
+                // 如果标签已经用引号包裹，保持不变
+                if (label.startsWith('"') && label.endsWith('"')) {
+                    return match;
+                }
+                
+                // 如果包含换行或特殊字符，需要处理
+                const hasNewline = label.includes('\n');
+                const hasSpecialChars = /[()/:&]/.test(label);
+                
+                if (hasNewline || hasSpecialChars) {
+                    // 将换行转换为 <br>，并用引号包裹
+                    let fixedLabel = label.trim().replace(/\n\s*/g, '<br>');
+                    // 转义内部的双引号
+                    fixedLabel = fixedLabel.replace(/"/g, '#quot;');
+                    return `${id}["${fixedLabel}"]`;
+                }
+                
+                return match;
+            });
+            
+            // 3. 处理圆角节点 ID(Label)
+            result = result.replace(/(\w+)\(((?:[^()]|\n)+)\)/g, (match, id, label) => {
+                // 跳过 classDef 和其他关键字
+                if (['fill', 'stroke', 'color', 'class', 'click'].includes(id)) {
+                    return match;
+                }
+                
+                const hasNewline = label.includes('\n');
+                const hasSpecialChars = /[/:&\[\]]/.test(label);
+                
+                if (hasNewline || hasSpecialChars) {
+                    let fixedLabel = label.trim().replace(/\n\s*/g, '<br>');
+                    fixedLabel = fixedLabel.replace(/"/g, '#quot;');
+                    return `${id}("${fixedLabel}")`;
+                }
+                
+                return match;
+            });
+            
+            return result;
+        };
+        
         // 自定义代码块渲染器，处理 Mermaid
         renderer.code = (code, language) => {
-            // 如果是 mermaid 代码块，直接返回 mermaid div
+            // 如果是 mermaid 代码块，预处理后返回 mermaid div
             if (language === 'mermaid') {
-                return `<div class="mermaid">${code}</div>`;
+                const processedCode = this.preprocessMermaid(code);
+                return `<div class="mermaid">${processedCode}</div>`;
             }
             
             // 其他代码块正常处理
