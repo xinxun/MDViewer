@@ -210,6 +210,70 @@ class MDViewerStandalone {
         }
     }
     
+    /**
+     * 获取当前文件的完整路径
+     * @returns {string} 完整路径（包括文件夹名）
+     */
+    getFullFilePath() {
+        const relativePath = this.currentFileEl.textContent;
+        if (!relativePath || relativePath === '请打开文件夹并选择 Markdown 文件') {
+            return '';
+        }
+        
+        // 组合文件夹名和相对路径
+        const folderName = this.directoryHandle ? this.directoryHandle.name : '';
+        return folderName ? `${folderName}/${relativePath}` : relativePath;
+    }
+    
+    /**
+     * 复制当前文件路径到剪贴板
+     */
+    async copyFilePath() {
+        const fullPath = this.getFullFilePath();
+        
+        if (!fullPath) {
+            this.showToast('没有打开的文件', 'warning');
+            return;
+        }
+        
+        try {
+            await navigator.clipboard.writeText(fullPath);
+            this.showToast('路径已复制: ' + fullPath, 'success');
+        } catch (error) {
+            // 降级方案：使用 execCommand
+            const textarea = document.createElement('textarea');
+            textarea.value = fullPath;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            this.showToast('路径已复制: ' + fullPath, 'success');
+        }
+    }
+    
+    /**
+     * 显示文件路径详情弹窗
+     */
+    showFilePathInfo() {
+        const relativePath = this.currentFileEl.textContent;
+        if (!relativePath || relativePath === '请打开文件夹并选择 Markdown 文件') {
+            this.showToast('没有打开的文件', 'warning');
+            return;
+        }
+        
+        const folderName = this.directoryHandle ? this.directoryHandle.name : '未知';
+        const fullPath = this.getFullFilePath();
+        const fileName = relativePath.split('/').pop();
+        const directory = relativePath.includes('/') 
+            ? relativePath.substring(0, relativePath.lastIndexOf('/'))
+            : '根目录';
+        
+        const info = `📁 文件夹: ${folderName}\n📂 目录: ${directory}\n📄 文件名: ${fileName}\n📋 完整路径: ${fullPath}`;
+        
+        // 使用 alert 显示（简单方案）或可以用自定义弹窗
+        alert(info);
+    }
+    
     // 添加文件夹到最近列表
     async addToRecentFolders(handle) {
         if (!this.db || !handle) return;
@@ -733,6 +797,24 @@ class MDViewerStandalone {
             });
         }
         
+        // 复制文件路径按钮
+        const copyPathBtn = document.getElementById('copyPathBtn');
+        if (copyPathBtn) {
+            copyPathBtn.addEventListener('click', () => {
+                this.copyFilePath();
+            });
+        }
+        
+        // 点击文件名显示路径详情
+        if (this.currentFileEl) {
+            this.currentFileEl.addEventListener('click', () => {
+                if (this.currentFileHandle) {
+                    this.copyFilePath();
+                }
+            });
+            this.currentFileEl.style.cursor = 'pointer';
+        }
+        
         // 搜索
         this.searchInput.addEventListener('input', (e) => {
             this.filterFiles(e.target.value);
@@ -1198,11 +1280,18 @@ class MDViewerStandalone {
             this.welcomePage.style.display = 'none';
             this.setViewMode(this.viewMode);
             
-            // 显示刷新按钮
+            // 显示工具栏按钮
             const refreshBtn = document.getElementById('refreshFileBtn');
             if (refreshBtn) {
                 refreshBtn.style.display = '';
             }
+            const copyPathBtn = document.getElementById('copyPathBtn');
+            if (copyPathBtn) {
+                copyPathBtn.style.display = '';
+            }
+            
+            // 更新工具栏文件名的提示（显示完整路径）
+            this.currentFileEl.title = `点击复制路径: ${this.getFullFilePath()}`;
             
             this.showToast('文件已打开', 'success');
         } catch (error) {
