@@ -2435,13 +2435,29 @@ class MDViewerStandalone {
                     <span class="line-content">${highlightedContent}</span>
                 `;
                 
-                // 双击跳转到文件
-                matchItem.addEventListener('dblclick', () => {
-                    this.jumpToSearchResult(fileResult.filePath, fileResult.fileHandle, match.lineNumber, query);
+                // 使用防抖机制，避免单击和双击重复触发
+                let clickTimer = null;
+                matchItem.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    // 如果已经有等待的定时器，清除它（双击时会先触发两次click）
+                    if (clickTimer) {
+                        clearTimeout(clickTimer);
+                    }
+                    // 延迟执行，给双击事件机会取消
+                    clickTimer = setTimeout(() => {
+                        this.jumpToSearchResult(fileResult.filePath, fileResult.fileHandle, match.lineNumber, query);
+                        clickTimer = null;
+                    }, 200);
                 });
                 
-                // 单击也可以跳转
-                matchItem.addEventListener('click', () => {
+                matchItem.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    // 取消单击的定时器
+                    if (clickTimer) {
+                        clearTimeout(clickTimer);
+                        clickTimer = null;
+                    }
+                    // 立即执行跳转
                     this.jumpToSearchResult(fileResult.filePath, fileResult.fileHandle, match.lineNumber, query);
                 });
                 
@@ -2471,35 +2487,57 @@ class MDViewerStandalone {
     // 跳转到搜索结果
     async jumpToSearchResult(filePath, fileHandle, lineNumber, query) {
         try {
+            // 记录导航历史
+            const previewContainer = this.preview.parentElement;
+            this.pushNavigationHistory('search', {
+                scrollTop: previewContainer ? previewContainer.scrollTop : 0
+            });
+            
             // 加载文件
             const file = await fileHandle.getFile();
-            const content = await file.text();
+            const content = await this.decodeFileContent(file);
             
             // 更新编辑器和预览
             this.editor.value = content;
             this.currentFileHandle = fileHandle;
-            this.currentFile = filePath;
+            this.currentContent = content;
             this.isModified = false;
             
-            // 更新文件列表选中状态
-            document.querySelectorAll('.file-item').forEach(item => {
-                item.classList.remove('active');
-                if (item.dataset.path === filePath) {
-                    item.classList.add('active');
-                }
-            });
+            // 更新当前文件路径显示（关键修复）
+            this.currentFileEl.textContent = filePath;
             
-            // 更新当前文件名显示
-            const fileName = filePath.split('/').pop();
-            this.currentFileName.textContent = fileName;
+            // 更新文件树选中状态
+            this.fileTree.querySelectorAll('.tree-item-content').forEach(el => {
+                el.classList.remove('active');
+            });
+            const activeItem = this.fileTree.querySelector(`[data-path="${filePath}"] .tree-item-content`);
+            if (activeItem) {
+                activeItem.classList.add('active');
+            }
+            
+            // 隐藏欢迎页面，显示内容
+            this.welcomePage.style.display = 'none';
+            this.setViewMode(this.viewMode);
+            
+            // 显示工具栏按钮
+            const refreshBtn = document.getElementById('refreshFileBtn');
+            if (refreshBtn) refreshBtn.style.display = '';
+            const copyPathBtn = document.getElementById('copyPathBtn');
+            if (copyPathBtn) copyPathBtn.style.display = '';
+            
+            // 保存上次打开的文件路径
+            localStorage.setItem('md-viewer-last-file', filePath);
             
             // 更新预览
             this.updatePreview();
             
+            // 更新导航按钮
+            this.updateNavigationButtons();
+            
             // 等待预览渲染完成后高亮并滚动
             setTimeout(() => {
                 this.highlightAndScrollToLine(lineNumber, query);
-            }, 100);
+            }, 150);
             
         } catch (error) {
             console.error('跳转到搜索结果失败:', error);
@@ -2509,8 +2547,15 @@ class MDViewerStandalone {
     
     // 高亮并滚动到指定行
     highlightAndScrollToLine(lineNumber, query) {
-        // 在编辑器中定位
-        if (this.viewMode === 'split') {
+        console.log(`[Search] 跳转到第 ${lineNumber} 行，搜索: "${query}", 视图模式: ${this.viewMode}`);
+        
+        // 确保预览容器可见
+        if (this.previewContainer) {
+            this.previewContainer.style.display = 'flex';
+        }
+        
+        // 在编辑器中定位（分栏模式）
+        if (this.viewMode === 'split' && this.editor) {
             const lines = this.editor.value.split('\n');
             let charCount = 0;
             for (let i = 0; i < lineNumber - 1 && i < lines.length; i++) {
@@ -2522,15 +2567,34 @@ class MDViewerStandalone {
             
             // 滚动编辑器
             const lineHeight = parseInt(getComputedStyle(this.editor).lineHeight) || 20;
-            this.editor.scrollTop = (lineNumber - 5) * lineHeight;
+            this.editor.scrollTop = Math.max(0, (lineNumber - 5) * lineHeight);
         }
         
-        // 在预览中高亮匹配项
-        this.highlightInPreview(query);
+        // 在预览中高亮匹配项并滚动（预览模式和分栏模式都需要）
+        // 使用延时确保 DOM 已更新
+        setTimeout(() => {
+            this.highlightInPreview(query, lineNumber);
+        }, 50);
     }
     
     // 在预览区域高亮匹配项
-    highlightInPreview(query) {
+    highlightInPreview(query, targetLineNumber = null) {
+        if (!query || !this.preview) {
+            console.warn('[Search] 无效的查询或预览区域');
+            return;
+        }
+        
+        // 防止重复滚动 - 如果正在处理同一个查询和行号，跳过
+        const cacheKey = `${query}_${targetLineNumber}`;
+        if (this._lastHighlightKey === cacheKey && this._highlightInProgress) {
+            console.log('[Search] 跳过重复的高亮请求');
+            return;
+        }
+        this._lastHighlightKey = cacheKey;
+        this._highlightInProgress = true;
+        
+        console.log(`[Search] 在预览区高亮: "${query}", 目标行: ${targetLineNumber}`);
+        
         // 清除之前的高亮
         this.clearPreviewHighlights();
         
@@ -2595,10 +2659,114 @@ class MDViewerStandalone {
             }
         });
         
-        // 滚动到第一个匹配项
-        if (firstMatch) {
-            firstMatch.classList.add('current');
-            firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // 收集所有高亮项
+        const allHighlights = this.preview.querySelectorAll('.search-highlight');
+        console.log(`[Search] 共找到 ${allHighlights.length} 个匹配项`);
+        
+        // 如果有目标行号，先滚动到大致位置
+        if (targetLineNumber && this.previewContainer) {
+            // 基于行号估算滚动位置
+            // 预览内容总高度 / 源文件总行数 ≈ 每行平均高度
+            const sourceContent = this.editor ? this.editor.value : '';
+            const totalLines = sourceContent.split('\n').length || 1;
+            const scrollHeight = this.previewContainer.scrollHeight;
+            const containerHeight = this.previewContainer.clientHeight;
+            
+            // 估算目标位置
+            const estimatedPosition = (targetLineNumber / totalLines) * scrollHeight;
+            const targetScrollTop = Math.max(0, estimatedPosition - containerHeight / 2);
+            
+            console.log(`[Search] 目标行: ${targetLineNumber}/${totalLines}, 估算位置: ${estimatedPosition}, scrollTop: ${targetScrollTop}`);
+            
+            // 先滚动到估算位置
+            this.previewContainer.scrollTop = targetScrollTop;
+        }
+        
+        // 找到最接近当前滚动位置的匹配项
+        let targetMatch = null;
+        if (allHighlights.length > 0) {
+            if (targetLineNumber && allHighlights.length > 1) {
+                // 有多个匹配项时，找到最接近当前滚动位置（视口中心）的那个
+                const scrollContainer = this.previewContainer;
+                const viewportCenter = scrollContainer.scrollTop + scrollContainer.clientHeight / 2;
+                
+                let minDistance = Infinity;
+                allHighlights.forEach(highlight => {
+                    // 计算元素的绝对位置
+                    let offsetTop = 0;
+                    let el = highlight;
+                    while (el && el !== scrollContainer) {
+                        offsetTop += el.offsetTop;
+                        el = el.offsetParent;
+                    }
+                    
+                    const distance = Math.abs(offsetTop - viewportCenter);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        targetMatch = highlight;
+                    }
+                });
+                console.log(`[Search] 选择最接近视口中心的匹配项，距离: ${minDistance}`);
+            } else {
+                // 只有一个匹配项，或没有目标行号
+                targetMatch = allHighlights[0];
+            }
+        }
+        
+        // 滚动到目标匹配项
+        if (targetMatch) {
+            console.log('[Search] 找到目标匹配项，准备精确滚动');
+            targetMatch.classList.add('current');
+            
+            // 添加高亮闪烁效果
+            targetMatch.style.transition = 'background-color 0.3s';
+            targetMatch.style.backgroundColor = '#ffeb3b';
+            
+            // 使用 setTimeout 确保 DOM 更新完成，然后精确滚动
+            setTimeout(() => {
+                try {
+                    const scrollContainer = this.previewContainer;
+                    
+                    if (scrollContainer && targetMatch) {
+                        // 使用 getBoundingClientRect 计算相对位置 - 这是最可靠的方法
+                        const matchRect = targetMatch.getBoundingClientRect();
+                        const containerRect = scrollContainer.getBoundingClientRect();
+                        
+                        // 检查匹配项是否在视口中
+                        const isInView = matchRect.top >= containerRect.top && 
+                                         matchRect.bottom <= containerRect.bottom;
+                        
+                        console.log(`[Search] 匹配项位置: top=${matchRect.top}, 容器: top=${containerRect.top}, bottom=${containerRect.bottom}, 在视口中: ${isInView}`);
+                        
+                        if (!isInView) {
+                            // 不在视口中，需要滚动
+                            // 计算需要滚动的距离
+                            const relativeTop = matchRect.top - containerRect.top;
+                            const scrollAdjustment = relativeTop - scrollContainer.clientHeight / 2 + matchRect.height / 2;
+                            
+                            console.log(`[Search] 需要滚动调整: ${scrollAdjustment}`);
+                            scrollContainer.scrollTop += scrollAdjustment;
+                        }
+                        
+                        console.log(`[Search] 最终 scrollTop: ${scrollContainer.scrollTop}`);
+                    }
+                } catch (e) {
+                    console.error('[Search] 滚动失败:', e);
+                }
+                
+                // 滚动完成，重置标志
+                this._highlightInProgress = false;
+                
+                // 2秒后恢复正常高亮样式
+                setTimeout(() => {
+                    if (targetMatch) {
+                        targetMatch.style.backgroundColor = '';
+                    }
+                }, 2000);
+            }, 100);
+        } else {
+            console.log('[Search] 未找到匹配项');
+            this._highlightInProgress = false;
         }
     }
     
