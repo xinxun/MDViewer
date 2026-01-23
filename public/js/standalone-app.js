@@ -856,6 +856,8 @@ class MDViewerStandalone {
             // 如果是 mermaid 代码块，预处理后返回 mermaid div
             if (language === 'mermaid') {
                 const processedCode = this.preprocessMermaid(code);
+                console.log('[Mermaid] Original code:', code.substring(0, 200));
+                console.log('[Mermaid] Processed code:', processedCode.substring(0, 200));
                 return `<div class="mermaid">${processedCode}</div>`;
             }
             
