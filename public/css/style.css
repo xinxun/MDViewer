@@ -576,6 +576,55 @@ body {
     background: var(--content-bg);
 }
 
+/* 预览区域双击编辑提示（仅在纯预览模式下） */
+.content-area:not(.split-mode) .preview-container .markdown-body {
+    cursor: text;
+}
+
+.content-area:not(.split-mode) .preview-container .markdown-body > *:hover {
+    background: var(--hover-bg);
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+.content-area:not(.split-mode) .preview-container .markdown-body > *:hover::after {
+    content: '双击编辑';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--content-bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--border-color);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+}
+
+.content-area:not(.split-mode) .preview-container .markdown-body > * {
+    position: relative;
+}
+
+.content-area:not(.split-mode) .preview-container .markdown-body > *:hover::after {
+    opacity: 0.8;
+}
+
+/* 排除特殊元素的悬停效果 */
+.content-area:not(.split-mode) .preview-container .markdown-body > .mermaid:hover,
+.content-area:not(.split-mode) .preview-container .markdown-body > .plantuml:hover,
+.content-area:not(.split-mode) .preview-container .markdown-body > pre:hover {
+    background: transparent;
+}
+
+.content-area:not(.split-mode) .preview-container .markdown-body > .mermaid:hover::after,
+.content-area:not(.split-mode) .preview-container .markdown-body > .plantuml:hover::after,
+.content-area:not(.split-mode) .preview-container .markdown-body > pre:hover::after {
+    display: none;
+}
+
 /* 分栏模式 */
 .content-area.split-mode {
     position: relative;

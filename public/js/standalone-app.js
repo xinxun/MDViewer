@@ -1195,6 +1195,13 @@ class MDViewerStandalone {
                 this.stopResize();
             }
         });
+        
+        // 预览区域双击进入编辑模式
+        if (this.preview) {
+            this.preview.addEventListener('dblclick', (e) => {
+                this.handlePreviewDoubleClick(e);
+            });
+        }
     }
     
     // 开始调整分栏大小
@@ -1233,6 +1240,113 @@ class MDViewerStandalone {
         localStorage.setItem('md-viewer-split-ratio', this.splitRatio);
     }
     
+    // 处理预览区域双击事件 - 进入编辑模式
+    handlePreviewDoubleClick(e) {
+        // 如果没有打开文件，不处理
+        if (!this.currentFileHandle) return;
+        
+        // 如果已经是分屏模式，不处理（避免重复）
+        if (this.viewMode === 'split') return;
+        
+        // 排除特殊元素的双击（如 Mermaid 图表缩放）
+        const target = e.target;
+        if (target.closest('.mermaid') || target.closest('.plantuml') || 
+            target.closest('a') || target.closest('code') || target.closest('pre')) {
+            return;
+        }
+        
+        // 获取双击位置对应的文本内容
+        const clickedElement = this.findClickedParagraph(target);
+        const searchText = clickedElement ? this.getElementSearchText(clickedElement) : null;
+        
+        // 切换到分屏模式
+        this.setViewMode('split');
+        
+        // 如果找到了对应的文本，尝试定位到编辑器中
+        if (searchText) {
+            setTimeout(() => {
+                this.locateTextInEditor(searchText);
+            }, 100);
+        }
+        
+        this.showToast('已进入编辑模式', 'info');
+    }
+    
+    // 找到双击的段落元素
+    findClickedParagraph(element) {
+        // 向上查找最近的块级元素
+        const blockElements = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'BLOCKQUOTE', 'TD', 'TH', 'DIV'];
+        let current = element;
+        
+        while (current && current !== this.preview) {
+            if (blockElements.includes(current.tagName)) {
+                return current;
+            }
+            current = current.parentElement;
+        }
+        
+        return element;
+    }
+    
+    // 获取元素的搜索文本
+    getElementSearchText(element) {
+        // 获取纯文本内容（去除子元素的影响）
+        let text = element.textContent || '';
+        
+        // 清理文本：移除多余空白
+        text = text.trim().replace(/\s+/g, ' ');
+        
+        // 如果文本太短或太长，返回null
+        if (text.length < 3 || text.length > 200) {
+            return null;
+        }
+        
+        // 取前50个字符作为搜索关键字
+        return text.substring(0, 50);
+    }
+    
+    // 在编辑器中定位文本
+    locateTextInEditor(searchText) {
+        if (!this.editor || !searchText) return;
+        
+        const content = this.editor.value;
+        
+        // 尝试查找完整匹配
+        let index = content.indexOf(searchText);
+        
+        // 如果没找到，尝试查找前20个字符
+        if (index === -1 && searchText.length > 20) {
+            index = content.indexOf(searchText.substring(0, 20));
+        }
+        
+        // 如果还没找到，尝试用第一个单词
+        if (index === -1) {
+            const firstWord = searchText.split(/\s+/)[0];
+            if (firstWord && firstWord.length >= 3) {
+                index = content.indexOf(firstWord);
+            }
+        }
+        
+        if (index !== -1) {
+            // 计算行号
+            const lineNumber = content.substring(0, index).split('\n').length;
+            
+            // 定位到该行
+            this.editor.focus();
+            
+            // 设置光标位置
+            this.editor.setSelectionRange(index, index + searchText.length);
+            
+            // 滚动到可见位置
+            const lines = content.substring(0, index).split('\n');
+            const lineHeight = parseInt(getComputedStyle(this.editor).lineHeight) || 20;
+            const scrollTop = (lines.length - 1) * lineHeight - this.editor.clientHeight / 3;
+            this.editor.scrollTop = Math.max(0, scrollTop);
+            
+            console.log(`[Edit] 定位到第 ${lineNumber} 行: "${searchText.substring(0, 30)}..."`);
+        }
+    }
+
     // 打开文件夹
     async openFolder() {
         try {
