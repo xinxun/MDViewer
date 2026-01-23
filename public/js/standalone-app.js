@@ -719,6 +719,48 @@ class MDViewerStandalone {
             // 匹配 ID[...] 或 ID["..."] 格式的节点定义
             let result = code;
             
+            // 0. 检测是否为时序图
+            const isSequenceDiagram = /^\s*sequenceDiagram\s*$/m.test(result);
+            
+            // 0.1 处理时序图消息中的特殊字符（括号等）
+            if (isSequenceDiagram) {
+                // 匹配时序图消息: Actor->>Actor: Message 或 Actor-->>Actor: Message
+                // 消息部分包含括号时需要用引号包裹
+                result = result.replace(
+                    /^(\s*)(\w+)([-]+>+[-]*)(\w+):\s*(.+)$/gm,
+                    (match, indent, from, arrow, to, message) => {
+                        // 如果消息已经用引号包裹，保持不变
+                        if (message.startsWith('"') && message.endsWith('"')) {
+                            return match;
+                        }
+                        // 如果消息包含特殊字符，用引号包裹
+                        const hasSpecialChars = /[(){}[\]<>&;#]/.test(message);
+                        if (hasSpecialChars) {
+                            // 转义内部的双引号
+                            const escapedMessage = message.replace(/"/g, '\\"');
+                            return `${indent}${from}${arrow}${to}: "${escapedMessage}"`;
+                        }
+                        return match;
+                    }
+                );
+                
+                // 处理 Note 语句中的特殊字符
+                result = result.replace(
+                    /^(\s*)(Note\s+(?:left|right|over)\s+[\w,\s]+):\s*(.+)$/gmi,
+                    (match, indent, notePrefix, message) => {
+                        if (message.startsWith('"') && message.endsWith('"')) {
+                            return match;
+                        }
+                        const hasSpecialChars = /[(){}[\]<>&;#]/.test(message);
+                        if (hasSpecialChars) {
+                            const escapedMessage = message.replace(/"/g, '\\"');
+                            return `${indent}${notePrefix}: "${escapedMessage}"`;
+                        }
+                        return match;
+                    }
+                );
+            }
+            
             // 1. 处理 subgraph 标签 - subgraph ID[Label] 或 subgraph ID["Label"]
             result = result.replace(/subgraph\s+(\w+)\[([^\]]+)\]/g, (match, id, label) => {
                 // 如果标签已经用引号包裹，保持不变

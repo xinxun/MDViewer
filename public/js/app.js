@@ -59,6 +59,65 @@ class MDViewer {
         // 自定义渲染器
         const renderer = new marked.Renderer();
         
+        // Mermaid 代码预处理 - 自动修复常见语法问题
+        this.preprocessMermaid = (code) => {
+            let result = code;
+            
+            // 检测是否为时序图
+            const isSequenceDiagram = /^\s*sequenceDiagram\s*$/m.test(result);
+            
+            // 处理时序图消息中的特殊字符（括号等）
+            if (isSequenceDiagram) {
+                // 匹配时序图消息: Actor->>Actor: Message
+                result = result.replace(
+                    /^(\s*)(\w+)([-]+>+[-]*)(\w+):\s*(.+)$/gm,
+                    (match, indent, from, arrow, to, message) => {
+                        if (message.startsWith('"') && message.endsWith('"')) {
+                            return match;
+                        }
+                        const hasSpecialChars = /[(){}[\]<>&;#]/.test(message);
+                        if (hasSpecialChars) {
+                            const escapedMessage = message.replace(/"/g, '\\"');
+                            return `${indent}${from}${arrow}${to}: "${escapedMessage}"`;
+                        }
+                        return match;
+                    }
+                );
+                
+                // 处理 Note 语句
+                result = result.replace(
+                    /^(\s*)(Note\s+(?:left|right|over)\s+[\w,\s]+):\s*(.+)$/gmi,
+                    (match, indent, notePrefix, message) => {
+                        if (message.startsWith('"') && message.endsWith('"')) {
+                            return match;
+                        }
+                        const hasSpecialChars = /[(){}[\]<>&;#]/.test(message);
+                        if (hasSpecialChars) {
+                            const escapedMessage = message.replace(/"/g, '\\"');
+                            return `${indent}${notePrefix}: "${escapedMessage}"`;
+                        }
+                        return match;
+                    }
+                );
+            }
+            
+            // 处理节点标签中的特殊字符
+            result = result.replace(/(\w+)\[((?:[^\[\]]|\n)+)\]/g, (match, id, label) => {
+                if (label.startsWith('"') && label.endsWith('"')) {
+                    return match;
+                }
+                const hasSpecialChars = /[()/:&]/.test(label);
+                if (hasSpecialChars) {
+                    let fixedLabel = label.trim().replace(/\n\s*/g, '<br>');
+                    fixedLabel = fixedLabel.replace(/"/g, '#quot;');
+                    return `${id}["${fixedLabel}"]`;
+                }
+                return match;
+            });
+            
+            return result;
+        };
+        
         // PlantUML 编码函数
         this.encodePlantUML = (code) => {
             // 确保代码包含 @startuml 和 @enduml
@@ -80,7 +139,8 @@ class MDViewer {
         renderer.code = (code, language) => {
             // 如果是 mermaid 代码块
             if (language === 'mermaid') {
-                return `<div class="mermaid">${code}</div>`;
+                const processedCode = this.preprocessMermaid(code);
+                return `<div class="mermaid">${processedCode}</div>`;
             }
             
             // 如果是 PlantUML 代码块
