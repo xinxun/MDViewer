@@ -733,12 +733,14 @@ class MDViewerStandalone {
                         if (message.startsWith('"') && message.endsWith('"')) {
                             return match;
                         }
-                        // 如果消息包含特殊字符，用引号包裹
-                        const hasSpecialChars = /[(){}[\]<>&;#]/.test(message);
-                        if (hasSpecialChars) {
-                            // 转义内部的双引号
-                            const escapedMessage = message.replace(/"/g, '\\"');
-                            return `${indent}${from}${arrow}${to}: "${escapedMessage}"`;
+                        // 如果消息包含括号，使用 HTML 实体编码
+                        // Mermaid 支持 #40; = ( 和 #41; = )
+                        const hasParentheses = /[()]/.test(message);
+                        if (hasParentheses) {
+                            const encodedMessage = message
+                                .replace(/\(/g, '#40;')
+                                .replace(/\)/g, '#41;');
+                            return `${indent}${from}${arrow}${to}: ${encodedMessage}`;
                         }
                         return match;
                     }

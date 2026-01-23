@@ -76,10 +76,13 @@ class MDViewer {
                         if (message.startsWith('"') && message.endsWith('"')) {
                             return match;
                         }
-                        const hasSpecialChars = /[(){}[\]<>&;#]/.test(message);
-                        if (hasSpecialChars) {
-                            const escapedMessage = message.replace(/"/g, '\\"');
-                            return `${indent}${from}${arrow}${to}: "${escapedMessage}"`;
+                        // 使用 HTML 实体编码替换括号
+                        const hasParentheses = /[()]/.test(message);
+                        if (hasParentheses) {
+                            const encodedMessage = message
+                                .replace(/\(/g, '#40;')
+                                .replace(/\)/g, '#41;');
+                            return `${indent}${from}${arrow}${to}: ${encodedMessage}`;
                         }
                         return match;
                     }
