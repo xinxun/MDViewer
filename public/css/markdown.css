@@ -755,6 +755,13 @@
     border-color: var(--border-color);
 }
 
+/* 深色模式下 PlantUML 图片添加白色背景，确保线条可见 */
+[data-theme="dark"] .markdown-body .plantuml img.plantuml-diagram {
+    background: #ffffff;
+    border-radius: 4px;
+    padding: 10px;
+}
+
 /* PlantUML 图片样式 */
 .markdown-body .plantuml img.plantuml-diagram {
     max-width: 100%;
