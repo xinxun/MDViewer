@@ -1,0 +1,47 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - heading " MD Viewer" [level=1] [ref=e5]:
+          - generic [ref=e6]: 
+          - text: MD Viewer
+        - button "" [ref=e7] [cursor=pointer]:
+          - generic [ref=e8]: 
+      - generic [ref=e9]:
+        - button " 打开文件夹" [ref=e10] [cursor=pointer]:
+          - generic [ref=e11]: 
+          - text: 打开文件夹
+        - button "" [ref=e12] [cursor=pointer]:
+          - generic [ref=e13]: 
+      - generic [ref=e14]:
+        - generic [ref=e15]: 
+        - textbox "搜索文件..." [ref=e16]
+      - generic [ref=e18]:
+        - generic [ref=e19]: 
+        - text: 加载中...
+    - main [ref=e20]:
+      - generic [ref=e21]:
+        - generic [ref=e22]:
+          - text: 
+          - generic [ref=e23]: 请选择一个 Markdown 文件
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - button "" [ref=e26] [cursor=pointer]:
+              - generic [ref=e27]: 
+            - button "" [ref=e28] [cursor=pointer]:
+              - generic [ref=e29]: 
+            - button "" [ref=e30] [cursor=pointer]:
+              - generic [ref=e31]: 
+          - text: 
+          - button "" [ref=e32] [cursor=pointer]:
+            - generic [ref=e33]: 
+      - generic [ref=e36]:
+        - generic [ref=e37]: 
+        - heading "欢迎使用 MD Viewer" [level=2] [ref=e38]
+        - paragraph [ref=e39]: 从左侧选择一个 Markdown 文件开始阅读
+        - paragraph [ref=e40]: 支持 GFM 语法、代码高亮、数学公式、流程图等
+  - text:  
+```

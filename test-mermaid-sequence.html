@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Mermaid Sequence Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+    <h1>Test 1: 原始代码（有括号，报错）</h1>
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    User->>ReactAnim: PlayStep()
+    ReactAnim->>Rotate: Play(FMolRotateAction)
+    </pre>
+
+    <h1>Test 2: 使用 HTML 实体编码（应该成功）</h1>
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    User->>ReactAnim: PlayStep#40;#41;
+    ReactAnim->>Rotate: Play#40;FMolRotateAction#41;
+    </pre>
+
+    <h1>Test 3: 完整示例（HTML实体编码）</h1>
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant User as User
+    participant ReactAnim as ChemReactAnimActor
+    participant Break as AnimBondBreak
+    participant Rotate as AnimMolRotate
+
+    User->>ReactAnim: PlayStep#40;#41;
+    ReactAnim->>ReactAnim: DestroyAnimActors#40;#41;
+    ReactAnim->>ReactAnim: Spawn Anim Actors
+    ReactAnim->>Rotate: Play#40;FMolRotateAction#41;
+    Rotate-->>ReactAnim: OnAnimationComplete
+    ReactAnim->>Break: Play#40;FBondBreakAction#41;
+    Break-->>ReactAnim: OnAnimationComplete
+    ReactAnim-->>User: OnAnimComplete
+    </pre>
+
+    <script>
+        mermaid.initialize({ 
+            startOnLoad: true,
+            securityLevel: 'loose'
+        });
+    </script>
+</body>
+</html>

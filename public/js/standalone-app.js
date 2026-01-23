@@ -722,7 +722,33 @@ class MDViewerStandalone {
             // 0. 检测是否为时序图
             const isSequenceDiagram = /^\s*sequenceDiagram\s*$/m.test(result);
             
-            // 0.1 处理时序图消息中的特殊字符（括号等）
+            // 0.1 处理时序图中的 Mermaid 保留字作为 participant 名称
+            // 保留字列表: break, end, loop, alt, else, opt, par, critical, section 等
+            if (isSequenceDiagram) {
+                const reservedWords = ['break', 'end', 'loop', 'alt', 'else', 'opt', 'par', 'and', 'critical', 'option', 'section', 'rect', 'note', 'activate', 'deactivate'];
+                
+                // 处理 participant 声明中的保留字
+                result = result.replace(
+                    /^(\s*)(participant|actor)\s+(\w+)\s+as\s+(\w+)$/gmi,
+                    (match, indent, keyword, id, alias) => {
+                        // 如果 ID 是保留字，需要给 alias 加引号
+                        if (reservedWords.includes(id.toLowerCase())) {
+                            return `${indent}${keyword} ${id}_ as ${alias}`;
+                        }
+                        return match;
+                    }
+                );
+                
+                // 同时修复消息中引用这些 ID 的地方
+                reservedWords.forEach(word => {
+                    const regex = new RegExp(`(--?>>?|--?[x)]|--?>)(${word})(:)`, 'gi');
+                    result = result.replace(regex, `$1${word}_$3`);
+                    const regex2 = new RegExp(`^(\\s*)(${word})(--?>>?|--?[x)]|--?>)`, 'gmi');
+                    result = result.replace(regex2, `$1${word}_$3`);
+                });
+            }
+            
+            // 0.2 处理时序图消息中的特殊字符（括号等）
             if (isSequenceDiagram) {
                 // 匹配时序图消息: Actor->>Actor: Message 或 Actor-->>Actor: Message
                 // 支持的箭头: -> --> ->> -->> -x --x -) --)
@@ -733,14 +759,12 @@ class MDViewerStandalone {
                         if (message.startsWith('"') && message.endsWith('"')) {
                             return match;
                         }
-                        // 如果消息包含括号，使用 HTML 实体编码
-                        // Mermaid 支持 #40; = ( 和 #41; = )
-                        const hasParentheses = /[()]/.test(message);
-                        if (hasParentheses) {
-                            const encodedMessage = message
-                                .replace(/\(/g, '#40;')
-                                .replace(/\)/g, '#41;');
-                            return `${indent}${from}${arrow}${to}: ${encodedMessage}`;
+                        // 如果消息包含括号或其他特殊字符，用引号包裹
+                        const hasSpecialChars = /[(){}[\]<>]/.test(message);
+                        if (hasSpecialChars) {
+                            // 转义内部的双引号
+                            const escapedMessage = message.replace(/"/g, "'");
+                            return `${indent}${from}${arrow}${to}: "${escapedMessage}"`;
                         }
                         return match;
                     }

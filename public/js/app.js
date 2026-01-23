@@ -66,6 +66,30 @@ class MDViewer {
             // 检测是否为时序图
             const isSequenceDiagram = /^\s*sequenceDiagram\s*$/m.test(result);
             
+            // 处理时序图中的 Mermaid 保留字作为 participant 名称
+            if (isSequenceDiagram) {
+                const reservedWords = ['break', 'end', 'loop', 'alt', 'else', 'opt', 'par', 'and', 'critical', 'option', 'section', 'rect', 'note', 'activate', 'deactivate'];
+                
+                // 处理 participant 声明中的保留字
+                result = result.replace(
+                    /^(\s*)(participant|actor)\s+(\w+)\s+as\s+(\w+)$/gmi,
+                    (match, indent, keyword, id, alias) => {
+                        if (reservedWords.includes(id.toLowerCase())) {
+                            return `${indent}${keyword} ${id}_ as ${alias}`;
+                        }
+                        return match;
+                    }
+                );
+                
+                // 修复消息中引用这些 ID 的地方
+                reservedWords.forEach(word => {
+                    const regex = new RegExp(`(--?>>?|--?[x)]|--?>)(${word})(:)`, 'gi');
+                    result = result.replace(regex, `$1${word}_$3`);
+                    const regex2 = new RegExp(`^(\\s*)(${word})(--?>>?|--?[x)]|--?>)`, 'gmi');
+                    result = result.replace(regex2, `$1${word}_$3`);
+                });
+            }
+            
             // 处理时序图消息中的特殊字符（括号等）
             if (isSequenceDiagram) {
                 // 匹配时序图消息: Actor->>Actor: Message
@@ -76,13 +100,11 @@ class MDViewer {
                         if (message.startsWith('"') && message.endsWith('"')) {
                             return match;
                         }
-                        // 使用 HTML 实体编码替换括号
-                        const hasParentheses = /[()]/.test(message);
-                        if (hasParentheses) {
-                            const encodedMessage = message
-                                .replace(/\(/g, '#40;')
-                                .replace(/\)/g, '#41;');
-                            return `${indent}${from}${arrow}${to}: ${encodedMessage}`;
+                        // 用引号包裹含括号的消息
+                        const hasSpecialChars = /[(){}[\]<>]/.test(message);
+                        if (hasSpecialChars) {
+                            const escapedMessage = message.replace(/"/g, "'");
+                            return `${indent}${from}${arrow}${to}: "${escapedMessage}"`;
                         }
                         return match;
                     }

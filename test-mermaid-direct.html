@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Mermaid Direct Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+    <h1>直接测试 Mermaid 10.6.1</h1>
+    
+    <h2>方案1: HTML实体编码 #40; #41;</h2>
+    <div id="test1"></div>
+
+    <h2>方案2: Unicode转义</h2>
+    <div id="test2"></div>
+
+    <h2>方案3: 反引号包裹</h2>
+    <div id="test3"></div>
+
+    <h2>方案4: 引号包裹整个消息</h2>
+    <div id="test4"></div>
+
+    <script>
+        mermaid.initialize({ 
+            startOnLoad: false,
+            securityLevel: 'loose'
+        });
+
+        const tests = [
+            {
+                id: 'test1',
+                name: 'HTML实体编码',
+                code: `sequenceDiagram
+    autonumber
+    User->>ReactAnim: PlayStep#40;#41;
+    ReactAnim->>Rotate: Play#40;FMolRotateAction#41;`
+            },
+            {
+                id: 'test2', 
+                name: 'Unicode转义',
+                code: `sequenceDiagram
+    autonumber
+    User->>ReactAnim: PlayStep&#40;&#41;
+    ReactAnim->>Rotate: Play&#40;FMolRotateAction&#41;`
+            },
+            {
+                id: 'test3',
+                name: '反引号包裹',
+                code: `sequenceDiagram
+    autonumber
+    User->>ReactAnim: \`PlayStep()\`
+    ReactAnim->>Rotate: \`Play(FMolRotateAction)\``
+            },
+            {
+                id: 'test4',
+                name: '引号包裹',
+                code: `sequenceDiagram
+    autonumber
+    User->>ReactAnim: "PlayStep()"
+    ReactAnim->>Rotate: "Play(FMolRotateAction)"`
+            }
+        ];
+
+        async function runTests() {
+            for (const test of tests) {
+                const el = document.getElementById(test.id);
+                try {
+                    const { svg } = await mermaid.render(test.id + '-svg', test.code);
+                    el.innerHTML = '<p style="color:green">✓ 成功!</p>' + svg;
+                    console.log(test.name + ': 成功');
+                } catch (e) {
+                    el.innerHTML = '<p style="color:red">✗ 失败: ' + e.message + '</p><pre>' + test.code + '</pre>';
+                    console.log(test.name + ': 失败', e.message);
+                }
+            }
+        }
+
+        runTests();
+    </script>
+</body>
+</html>
