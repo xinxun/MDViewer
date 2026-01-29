@@ -1242,18 +1242,33 @@ class MDViewerStandalone {
     
     // 处理预览区域双击事件 - 进入编辑模式
     handlePreviewDoubleClick(e) {
+        console.log('[DblClick] 预览区域双击事件触发', {
+            hasFileHandle: !!this.currentFileHandle,
+            viewMode: this.viewMode,
+            target: e.target.tagName
+        });
+        
         // 如果没有打开文件，不处理
-        if (!this.currentFileHandle) return;
+        if (!this.currentFileHandle) {
+            console.log('[DblClick] 没有打开文件，跳过');
+            return;
+        }
         
         // 如果已经是分屏模式，不处理（避免重复）
-        if (this.viewMode === 'split') return;
+        if (this.viewMode === 'split') {
+            console.log('[DblClick] 已经是分屏模式，跳过');
+            return;
+        }
         
         // 排除特殊元素的双击（如 Mermaid 图表缩放）
         const target = e.target;
         if (target.closest('.mermaid') || target.closest('.plantuml') || 
             target.closest('a') || target.closest('code') || target.closest('pre')) {
+            console.log('[DblClick] 点击的是特殊元素，跳过');
             return;
         }
+        
+        console.log('[DblClick] 切换到分屏模式');
         
         // 获取双击位置对应的文本内容
         const clickedElement = this.findClickedParagraph(target);
