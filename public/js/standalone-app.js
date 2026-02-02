@@ -7,7 +7,7 @@ class MDViewerStandalone {
         this.isModified = false;
         this.viewMode = 'split'; // 默认分栏模式
         this.fileHandles = new Map();
-        this.manualEncoding = 'auto';
+        this.manualEncoding = 'utf-8'; // 默认使用 UTF-8 编码
         this.splitRatio = 50; // 分栏比例（百分比）
         this.isResizing = false;
         this.basePath = ''; // 用户设置的文件夹完整路径前缀
@@ -2817,6 +2817,32 @@ $$
                 this.exportToHtml();
             });
         }
+        
+        // 批量导出按钮
+        const batchExportPdfBtn = document.getElementById('batchExportPdfBtn');
+        const batchExportWordBtn = document.getElementById('batchExportWordBtn');
+        const batchExportHtmlBtn = document.getElementById('batchExportHtmlBtn');
+        
+        if (batchExportPdfBtn) {
+            batchExportPdfBtn.addEventListener('click', () => {
+                exportMenu.classList.remove('show');
+                this.batchExport('pdf');
+            });
+        }
+        
+        if (batchExportWordBtn) {
+            batchExportWordBtn.addEventListener('click', () => {
+                exportMenu.classList.remove('show');
+                this.batchExport('word');
+            });
+        }
+        
+        if (batchExportHtmlBtn) {
+            batchExportHtmlBtn.addEventListener('click', () => {
+                exportMenu.classList.remove('show');
+                this.batchExport('html');
+            });
+        }
     }
     
     /**
@@ -3215,6 +3241,315 @@ ${this.getExportHtmlContent()}
             console.error('HTML导出失败:', error);
             this.showToast('HTML导出失败: ' + error.message, 'error');
         }
+    }
+    
+    // ==================== 批量导出功能 ====================
+    
+    /**
+     * 批量导出所有 Markdown 文件
+     * @param {string} format - 导出格式: 'pdf', 'word', 'html'
+     */
+    async batchExport(format) {
+        // 检查是否有打开的文件夹
+        if (this.fileHandles.size === 0) {
+            this.showToast('请先打开一个包含 Markdown 文件的文件夹', 'warning');
+            return;
+        }
+        
+        // 获取格式名称
+        const formatNames = {
+            'pdf': 'PDF',
+            'word': 'Word',
+            'html': 'HTML'
+        };
+        const formatName = formatNames[format] || format.toUpperCase();
+        
+        try {
+            // 让用户选择输出目录
+            let outputDir;
+            try {
+                outputDir = await window.showDirectoryPicker({
+                    mode: 'readwrite',
+                    startIn: 'downloads'
+                });
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    // 用户取消了选择
+                    return;
+                }
+                throw e;
+            }
+            
+            const total = this.fileHandles.size;
+            let processed = 0;
+            let succeeded = 0;
+            let failed = 0;
+            const errors = [];
+            
+            this.showBatchExportProgress(`准备导出 ${total} 个文件为 ${formatName}...`, 0, total);
+            
+            // 遍历所有文件
+            for (const [filePath, fileHandle] of this.fileHandles) {
+                processed++;
+                this.updateBatchExportProgress(`正在导出: ${filePath}`, processed, total);
+                
+                try {
+                    // 读取文件内容
+                    const file = await fileHandle.getFile();
+                    const content = await this.decodeFileContent(file);
+                    
+                    // 渲染 Markdown 为 HTML
+                    const htmlContent = this.renderMarkdownToHtml(content);
+                    
+                    // 生成输出文件名（保留目录结构，将路径分隔符替换为下划线）
+                    const baseName = filePath.replace(/\.(md|markdown)$/i, '');
+                    const safeFileName = baseName.replace(/[\/\\]/g, '_').replace(/[<>:"|?*]/g, '');
+                    
+                    // 根据格式生成文件
+                    let outputContent;
+                    let outputFileName;
+                    let mimeType;
+                    
+                    switch (format) {
+                        case 'pdf':
+                            // PDF 使用 HTML 格式存储，用户需用浏览器打开后打印
+                            outputFileName = `${safeFileName}.html`;
+                            mimeType = 'text/html';
+                            outputContent = this.generatePdfReadyHtml(baseName, htmlContent);
+                            break;
+                        case 'word':
+                            outputFileName = `${safeFileName}.doc`;
+                            mimeType = 'application/msword';
+                            outputContent = '\ufeff' + this.generateWordHtml(baseName, htmlContent);
+                            break;
+                        case 'html':
+                        default:
+                            outputFileName = `${safeFileName}.html`;
+                            mimeType = 'text/html';
+                            outputContent = this.generateStandaloneHtml(baseName, htmlContent);
+                            break;
+                    }
+                    
+                    // 写入文件到输出目录
+                    const outputFileHandle = await outputDir.getFileHandle(outputFileName, { create: true });
+                    const writable = await outputFileHandle.createWritable();
+                    await writable.write(outputContent);
+                    await writable.close();
+                    
+                    succeeded++;
+                } catch (error) {
+                    failed++;
+                    errors.push({ file: filePath, error: error.message });
+                    console.warn(`导出失败 ${filePath}:`, error);
+                }
+            }
+            
+            this.hideBatchExportProgress();
+            
+            // 显示结果
+            if (failed === 0) {
+                this.showToast(`批量导出完成: ${succeeded} 个文件已导出为 ${formatName}`, 'success');
+            } else {
+                this.showToast(`导出完成: 成功 ${succeeded} 个，失败 ${failed} 个`, 'warning');
+                console.error('批量导出失败的文件:', errors);
+            }
+            
+        } catch (error) {
+            this.hideBatchExportProgress();
+            console.error('批量导出失败:', error);
+            this.showToast('批量导出失败: ' + error.message, 'error');
+        }
+    }
+    
+    /**
+     * 显示批量导出进度
+     */
+    showBatchExportProgress(message, current, total) {
+        let overlay = document.getElementById('batchExportOverlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.className = 'export-overlay';
+            overlay.id = 'batchExportOverlay';
+            overlay.innerHTML = `
+                <div class="export-progress batch-export-progress">
+                    <i class="fas fa-spinner"></i>
+                    <p class="batch-message">${message}</p>
+                    <div class="batch-progress-bar">
+                        <div class="batch-progress-fill" style="width: 0%"></div>
+                    </div>
+                    <p class="batch-counter">0 / ${total}</p>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
+        this.updateBatchExportProgress(message, current, total);
+    }
+    
+    /**
+     * 更新批量导出进度
+     */
+    updateBatchExportProgress(message, current, total) {
+        const overlay = document.getElementById('batchExportOverlay');
+        if (!overlay) return;
+        
+        const messageEl = overlay.querySelector('.batch-message');
+        const progressFill = overlay.querySelector('.batch-progress-fill');
+        const counterEl = overlay.querySelector('.batch-counter');
+        
+        if (messageEl) messageEl.textContent = message;
+        if (progressFill) progressFill.style.width = `${(current / total) * 100}%`;
+        if (counterEl) counterEl.textContent = `${current} / ${total}`;
+    }
+    
+    /**
+     * 隐藏批量导出进度
+     */
+    hideBatchExportProgress() {
+        const overlay = document.getElementById('batchExportOverlay');
+        if (overlay) {
+            overlay.remove();
+        }
+    }
+    
+    /**
+     * 将 Markdown 内容渲染为 HTML
+     * @param {string} markdownContent - Markdown 源文本
+     * @returns {string} 渲染后的 HTML
+     */
+    renderMarkdownToHtml(markdownContent) {
+        // 使用 marked 渲染
+        return marked.parse(markdownContent);
+    }
+    
+    /**
+     * 生成独立的 HTML 文件内容
+     */
+    generateStandaloneHtml(title, bodyContent) {
+        return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${this.escapeHtml(title)}</title>
+    <style>
+        ${this.getExportStyles()}
+        .mermaid { text-align: center; margin: 24px 0; }
+        .mermaid svg { max-width: 100%; height: auto; }
+        .plantuml { text-align: center; margin: 24px 0; }
+        .plantuml img { max-width: 100%; height: auto; }
+        .hljs { display: block; overflow-x: auto; padding: 0.5em; background: #f6f8fa; }
+        .hljs-comment, .hljs-quote { color: #6a737d; }
+        .hljs-keyword, .hljs-selector-tag { color: #d73a49; }
+        .hljs-string, .hljs-attr { color: #032f62; }
+        .hljs-number, .hljs-literal { color: #005cc5; }
+        .hljs-function, .hljs-title { color: #6f42c1; }
+    </style>
+</head>
+<body>
+${bodyContent}
+</body>
+</html>`;
+    }
+    
+    /**
+     * 生成适合打印为 PDF 的 HTML 文件
+     */
+    generatePdfReadyHtml(title, bodyContent) {
+        return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${this.escapeHtml(title)}</title>
+    <style>
+        ${this.getExportStyles()}
+        @media print {
+            body { padding: 0; margin: 0; }
+            pre, code { white-space: pre-wrap; word-wrap: break-word; }
+        }
+    </style>
+</head>
+<body>
+${bodyContent}
+<script>
+    // 提示用户打印
+    alert('请使用浏览器的打印功能 (Ctrl+P) 将此文档保存为 PDF');
+<\/script>
+</body>
+</html>`;
+    }
+    
+    /**
+     * 生成 Word 兼容的 HTML 文件
+     */
+    generateWordHtml(title, bodyContent) {
+        return `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" 
+      xmlns:w="urn:schemas-microsoft-com:office:word" 
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>${this.escapeHtml(title)}</title>
+    <!--[if gte mso 9]>
+    <xml>
+        <w:WordDocument>
+            <w:View>Print</w:View>
+            <w:Zoom>100</w:Zoom>
+            <w:DoNotOptimizeForBrowser/>
+        </w:WordDocument>
+    </xml>
+    <![endif]-->
+    <style>
+        @page { size: A4; margin: 2cm; }
+        body {
+            font-family: "Microsoft YaHei", "SimSun", Arial, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            color: #000;
+        }
+        h1 { font-size: 22pt; font-weight: bold; margin: 24pt 0 12pt 0; border-bottom: 1pt solid #ccc; padding-bottom: 6pt; }
+        h2 { font-size: 18pt; font-weight: bold; margin: 20pt 0 10pt 0; border-bottom: 1pt solid #eee; padding-bottom: 4pt; }
+        h3 { font-size: 14pt; font-weight: bold; margin: 16pt 0 8pt 0; }
+        h4 { font-size: 12pt; font-weight: bold; margin: 14pt 0 6pt 0; }
+        p { margin: 0 0 12pt 0; }
+        code {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            background-color: #f5f5f5;
+            padding: 2pt 4pt;
+        }
+        pre {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10pt;
+            background-color: #f5f5f5;
+            padding: 12pt;
+            border: 1pt solid #ddd;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        pre code { background: none; padding: 0; }
+        blockquote {
+            margin: 12pt 0;
+            padding: 6pt 12pt;
+            border-left: 4pt solid #ddd;
+            color: #666;
+        }
+        table { border-collapse: collapse; width: 100%; margin: 12pt 0; }
+        th, td { border: 1pt solid #000; padding: 6pt 10pt; }
+        th { background-color: #f0f0f0; font-weight: bold; }
+        ul, ol { margin: 12pt 0; padding-left: 24pt; }
+        li { margin: 4pt 0; }
+        img { max-width: 100%; height: auto; }
+        a { color: #0066cc; }
+        hr { border: none; border-top: 1pt solid #ccc; margin: 18pt 0; }
+    </style>
+</head>
+<body>
+${bodyContent}
+</body>
+</html>`;
     }
     
     // 更新目录内容

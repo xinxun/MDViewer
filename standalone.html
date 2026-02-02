@@ -103,8 +103,8 @@
                         </button>
                     </div>
                     <select id="encodingSelect" class="encoding-select" title="文件编码">
+                        <option value="utf-8" selected>UTF-8</option>
                         <option value="auto">自动检测</option>
-                        <option value="utf-8">UTF-8</option>
                         <option value="gbk">GBK</option>
                         <option value="gb2312">GB2312</option>
                         <option value="gb18030">GB18030</option>
@@ -134,6 +134,16 @@
                             </button>
                             <button class="export-option" id="exportHtmlBtn">
                                 <i class="fas fa-file-code"></i> 导出 HTML
+                            </button>
+                            <div class="export-divider"></div>
+                            <button class="export-option" id="batchExportPdfBtn">
+                                <i class="fas fa-copy"></i> 批量导出 PDF
+                            </button>
+                            <button class="export-option" id="batchExportWordBtn">
+                                <i class="fas fa-copy"></i> 批量导出 Word
+                            </button>
+                            <button class="export-option" id="batchExportHtmlBtn">
+                                <i class="fas fa-copy"></i> 批量导出 HTML
                             </button>
                         </div>
                     </div>
@@ -278,6 +288,6 @@
     <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
-    <script src="public/js/standalone-app.js?v=1.9.6"></script>
+    <script src="public/js/standalone-app.js?v=2.0.1"></script>
 </body>
 </html>
