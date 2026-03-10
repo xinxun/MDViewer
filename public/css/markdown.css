@@ -659,6 +659,7 @@
     justify-content: center;
     transition: all 0.3s ease;
     backdrop-filter: blur(10px);
+    z-index: 10001;
 }
 
 .diagram-zoom-modal .zoom-close:hover {
@@ -678,6 +679,7 @@
     padding: 12px 20px;
     border-radius: 30px;
     backdrop-filter: blur(10px);
+    z-index: 10001;
 }
 
 .diagram-zoom-modal .zoom-controls button {
