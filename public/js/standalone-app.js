@@ -722,6 +722,24 @@ class MDViewerStandalone {
             // 0. 检测是否为时序图
             const isSequenceDiagram = /^\s*sequenceDiagram\s*$/m.test(result);
             
+            // 0.0 检测是否为甘特图 - 处理 section 名中的冒号
+            // Mermaid 10.6.1 的 Gantt 解析器将换行符视为普通空白，导致 section 名中的冒号
+            // 与任务定义的冒号(:id, date, duration)产生歧义，需要将 section 名中的冒号替换
+            const isGanttDiagram = /^\s*gantt\s*$/m.test(result);
+            if (isGanttDiagram) {
+                result = result.replace(
+                    /^(\s*section\s+)(.+)$/gm,
+                    (match, keyword, sectionName) => {
+                        // 如果 section 名包含冒号，替换为中文全角冒号（避免与任务定义冲突）
+                        if (sectionName.includes(':')) {
+                            const fixedName = sectionName.replace(/:/g, '：');
+                            return keyword + fixedName;
+                        }
+                        return match;
+                    }
+                );
+            }
+            
             // 0.1 处理时序图中的 Mermaid 保留字作为 participant 名称
             // 保留字列表: break, end, loop, alt, else, opt, par, critical, section 等
             if (isSequenceDiagram) {
@@ -759,8 +777,8 @@ class MDViewerStandalone {
                         if (message.startsWith('"') && message.endsWith('"')) {
                             return match;
                         }
-                        // 如果消息包含括号或其他特殊字符，用引号包裹
-                        const hasSpecialChars = /[(){}[\]<>]/.test(message);
+                        // 如果消息包含特殊字符（不含括号，括号在现代 Mermaid 中原生支持），用引号包裹
+                        const hasSpecialChars = /[{}[\]<>]/.test(message);
                         if (hasSpecialChars) {
                             // 转义内部的双引号
                             const escapedMessage = message.replace(/"/g, "'");
@@ -928,7 +946,10 @@ class MDViewerStandalone {
         
         renderer.image = (href, title, text) => {
             const titleAttr = title ? ` title="${title}"` : '';
-            return `<img src="${href}" alt="${text}"${titleAttr} loading="lazy" onclick="window.open('${href}', '_blank')">`;
+            // 使用 data-original-src 保存原始路径，后续在 updatePreview 中解析为 blob URL
+            const isRemote = href.startsWith('http://') || href.startsWith('https://') || href.startsWith('data:') || href.startsWith('blob:');
+            const originalSrc = isRemote ? '' : ` data-original-src="${href}"`;
+            return `<img src="${isRemote ? href : ''}" alt="${text}"${titleAttr}${originalSrc} loading="lazy" onclick="window.open('${href}', '_blank')">`;
         };
         
         renderer.link = (href, title, text) => {
@@ -1857,16 +1878,23 @@ class MDViewerStandalone {
     
     // 更新预览
     updatePreview() {
+        // 清理之前创建的 blob URL，防止内存泄漏
+        if (this._imageBlobUrls) {
+            for (const url of this._imageBlobUrls) {
+                URL.revokeObjectURL(url);
+            }
+        }
+        this._imageBlobUrls = [];
+        
         const content = this.editor.value;
         this.preview.innerHTML = marked.parse(content);
         
-        // 重新高亮代码块
-        this.preview.querySelectorAll('pre code:not(.mermaid)').forEach((block) => {
-            hljs.highlightElement(block);
-        });
-        
+        // 注意：代码块已由自定义 renderer.code 高亮，无需再次调用 hljs.highlightElement
         // 处理本地 .md 文件链接的点击
         this.bindMdLinkHandlers();
+        
+        // 解析本地图片路径（通过 File System Access API 读取图片并创建 blob URL）
+        this.resolveImagePaths();
         
         // 渲染 Mermaid 图表
         if (typeof mermaid !== 'undefined') {
@@ -2036,6 +2064,100 @@ class MDViewerStandalone {
             .replace(/\/+/g, '/') // 多个斜杠合并
             .replace(/^\//, '')   // 移除开头斜杠
             .replace(/\/$/, '');  // 移除结尾斜杠
+    }
+
+    // ==================== 本地图片解析功能 ====================
+
+    /**
+     * 解析预览中的本地图片路径
+     * 对于相对路径的图片，通过 File System Access API 读取并创建 blob URL
+     */
+    async resolveImagePaths() {
+        const images = this.preview.querySelectorAll('img[data-original-src]');
+        if (images.length === 0) return;
+
+        const currentPath = this.currentFileEl.textContent;
+        if (!currentPath || currentPath === '请打开文件夹并选择 Markdown 文件') return;
+
+        console.log(`[Image] 找到 ${images.length} 张本地图片待解析`);
+
+        // 获取当前文件所在目录路径
+        const pathParts = currentPath.split('/');
+        pathParts.pop(); // 移除文件名
+        const currentDir = pathParts.join('/');
+
+        for (const img of images) {
+            const originalSrc = img.getAttribute('data-original-src');
+            if (!originalSrc) continue;
+
+            try {
+                // 解析图片的相对路径
+                const resolvedPath = this.resolveRelativePath(currentPath, originalSrc);
+                const normalizedPath = this.normalizePath(resolvedPath);
+                console.log(`[Image] 解析图片: ${originalSrc} → ${normalizedPath}`);
+
+                // 通过 File System Access API 读取图片
+                const blobUrl = await this.readImageFile(normalizedPath);
+                if (blobUrl) {
+                    img.src = blobUrl;
+                    img.removeAttribute('data-original-src');
+                    // 更新 onclick 以打开 blob URL
+                    img.setAttribute('onclick', `window.open('${blobUrl}', '_blank')`);
+                    // 记录 blob URL 以便后续清理
+                    if (!this._imageBlobUrls) this._imageBlobUrls = [];
+                    this._imageBlobUrls.push(blobUrl);
+                    console.log(`[Image] 图片已加载: ${normalizedPath}`);
+                } else {
+                    // 加载失败时保留原始路径
+                    img.src = originalSrc;
+                    img.removeAttribute('data-original-src');
+                }
+            } catch (error) {
+                console.warn(`[Image] 加载图片失败: ${originalSrc}`, error);
+                // 加载失败时保留原始路径（可能显示为损坏图标）
+                img.src = originalSrc;
+                img.removeAttribute('data-original-src');
+            }
+        }
+    }
+
+    /**
+     * 通过 File System Access API 读取图片文件并返回 blob URL
+     * @param {string} filePath - 相对于根目录的文件路径 (如: "docs/images/photo.png")
+     * @returns {Promise<string|null>} blob URL 或 null
+     */
+    async readImageFile(filePath) {
+        if (!this.directoryHandle) return null;
+
+        try {
+            // 将路径拆分为目录部分和文件名
+            const parts = filePath.split('/');
+            const fileName = parts.pop();
+            
+            // 逐级进入子目录
+            let currentHandle = this.directoryHandle;
+            for (const part of parts) {
+                if (!part) continue;
+                try {
+                    currentHandle = await currentHandle.getDirectoryHandle(part);
+                } catch (e) {
+                    console.warn(`[Image] 无法进入目录: ${part}`, e);
+                    return null;
+                }
+            }
+
+            // 获取图片文件句柄
+            const imageFileHandle = await currentHandle.getFileHandle(fileName);
+            const imageFile = await imageFileHandle.getFile();
+
+            // 创建 blob URL
+            const blobUrl = URL.createObjectURL(imageFile);
+            console.log(`[Image] 创建 Blob URL: ${blobUrl}`);
+            return blobUrl;
+        } catch (error) {
+            console.warn(`[Image] 读取图片文件失败: ${filePath}`, error);
+            return null;
+        }
     }
 
     // ==================== 导航历史功能 ====================
@@ -2732,11 +2854,7 @@ $$
         // 渲染演示内容
         this.preview.innerHTML = marked.parse(demoContent);
         
-        // 重新高亮代码块
-        this.preview.querySelectorAll('pre code:not(.mermaid)').forEach((block) => {
-            hljs.highlightElement(block);
-        });
-        
+        // 注意：代码块已由自定义 renderer.code 高亮，无需再次调用 hljs.highlightElement
         // 渲染 Mermaid 图表
         if (typeof mermaid !== 'undefined') {
             const mermaidElements = this.preview.querySelectorAll('.mermaid');

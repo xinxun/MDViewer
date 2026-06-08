@@ -66,6 +66,24 @@ class MDViewer {
             // 检测是否为时序图
             const isSequenceDiagram = /^\s*sequenceDiagram\s*$/m.test(result);
             
+            // 检测是否为甘特图 - 处理 section 名中的冒号
+            // Mermaid 10.6.1 的 Gantt 解析器将换行符视为普通空白，导致 section 名中的冒号
+            // 与任务定义的冒号(:id, date, duration)产生歧义，需要将 section 名中的冒号替换
+            const isGanttDiagram = /^\s*gantt\s*$/m.test(result);
+            if (isGanttDiagram) {
+                result = result.replace(
+                    /^(\s*section\s+)(.+)$/gm,
+                    (match, keyword, sectionName) => {
+                        // 如果 section 名包含冒号，替换为中文全角冒号（避免与任务定义冲突）
+                        if (sectionName.includes(':')) {
+                            const fixedName = sectionName.replace(/:/g, '：');
+                            return keyword + fixedName;
+                        }
+                        return match;
+                    }
+                );
+            }
+            
             // 处理时序图中的 Mermaid 保留字作为 participant 名称
             if (isSequenceDiagram) {
                 const reservedWords = ['break', 'end', 'loop', 'alt', 'else', 'opt', 'par', 'and', 'critical', 'option', 'section', 'rect', 'note', 'activate', 'deactivate'];
@@ -213,10 +231,17 @@ class MDViewer {
             return `<h${level} id="${slug}">${text}</h${level}>`;
         };
         
-        // 图片添加点击放大
+        // 图片添加点击放大，本地相对路径通过服务器 API 代理
         renderer.image = (href, title, text) => {
             const titleAttr = title ? ` title="${title}"` : '';
-            return `<img src="${href}" alt="${text}"${titleAttr} loading="lazy" onclick="window.open('${href}', '_blank')">`;
+            // 对于相对路径的图片，通过服务器 API 加载
+            let src = href;
+            if (!href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('data:') && !href.startsWith('blob:') && !href.startsWith('/')) {
+                // 相对路径 - 将通过 updatePreview 中的后处理来解析
+                src = ''; // 暂时清空，使用 data-original-src 保存原始路径
+            }
+            const originalSrc = (src === '') ? ` data-original-src="${href}"` : '';
+            return `<img src="${src}" alt="${text}"${titleAttr}${originalSrc} loading="lazy" onclick="window.open('${href}', '_blank')">`;
         };
         
         // 链接在新窗口打开
@@ -581,6 +606,9 @@ class MDViewer {
             hljs.highlightElement(block);
         });
         
+        // 解析本地图片路径（通过服务器 API 代理相对路径图片）
+        this.resolveImagePaths();
+        
         // 渲染 Mermaid 图表
         if (typeof mermaid !== 'undefined') {
             const mermaidElements = this.preview.querySelectorAll('.mermaid');
@@ -647,6 +675,80 @@ class MDViewer {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    // ==================== 本地图片解析功能 ====================
+
+    /**
+     * 解析预览中的本地图片路径
+     * 对于相对路径的图片，通过服务器 API 代理加载
+     */
+    resolveImagePaths() {
+        const images = this.preview.querySelectorAll('img[data-original-src]');
+        if (images.length === 0) return;
+
+        const currentPath = this.currentFileEl.textContent;
+        if (!currentPath || currentPath === '请打开文件夹并选择 Markdown 文件') return;
+
+        console.log(`[Image] 找到 ${images.length} 张本地图片待解析`);
+
+        for (const img of images) {
+            const originalSrc = img.getAttribute('data-original-src');
+            if (!originalSrc) continue;
+
+            // 解析图片的相对路径
+            const resolvedPath = this.resolveRelativePath(currentPath, originalSrc);
+            const normalizedPath = this.normalizePath(resolvedPath);
+
+            // 通过服务器 API 加载图片
+            const apiUrl = `/api/file/raw?path=${encodeURIComponent(normalizedPath)}`;
+            img.src = apiUrl;
+            img.removeAttribute('data-original-src');
+            // 更新 onclick 以打开正确的 API URL
+            img.setAttribute('onclick', `window.open('${apiUrl}', '_blank')`);
+            console.log(`[Image] 图片路径已解析: ${originalSrc} → ${apiUrl}`);
+        }
+    }
+
+    /**
+     * 解析相对路径
+     * @param {string} currentPath - 当前文件路径 (如: "docs/guide/intro.md")
+     * @param {string} relativePath - 相对路径 (如: "./image.png")
+     * @returns {string} 解析后的完整路径
+     */
+    resolveRelativePath(currentPath, relativePath) {
+        const pathParts = currentPath.split('/');
+        pathParts.pop(); // 移除文件名，保留目录路径
+
+        let targetParts = [...pathParts];
+        const relParts = relativePath.split('/');
+
+        for (const part of relParts) {
+            if (part === '.' || part === '') {
+                continue;
+            } else if (part === '..') {
+                if (targetParts.length > 0) {
+                    targetParts.pop();
+                }
+            } else {
+                targetParts.push(part);
+            }
+        }
+
+        return targetParts.join('/');
+    }
+
+    /**
+     * 规范化路径
+     * @param {string} path - 路径
+     * @returns {string} 规范化后的路径
+     */
+    normalizePath(path) {
+        return path
+            .replace(/\\/g, '/')
+            .replace(/\/+/g, '/')
+            .replace(/^\//, '')
+            .replace(/\/$/, '');
     }
     
     // 主题切换

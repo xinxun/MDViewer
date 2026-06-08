@@ -229,6 +229,32 @@ const server = http.createServer(async (req, res) => {
         return;
     }
     
+    // 提供目标目录中的原始文件（图片等）
+    if (pathname.startsWith('/api/file/raw') && req.method === 'GET') {
+        try {
+            const filePath = query.path;
+            const fullPath = path.join(targetDir, filePath);
+            
+            if (!fullPath.startsWith(targetDir)) {
+                res.writeHead(403);
+                res.end('Forbidden');
+                return;
+            }
+            
+            if (!fs.existsSync(fullPath)) {
+                res.writeHead(404);
+                res.end('Not Found');
+                return;
+            }
+            
+            serveStatic(res, fullPath);
+        } catch (error) {
+            res.writeHead(500);
+            res.end('Internal Server Error');
+        }
+        return;
+    }
+    
     // 静态文件服务
     let staticPath = pathname === '/' ? '/index.html' : pathname;
     
