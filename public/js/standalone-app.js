@@ -3426,24 +3426,21 @@ ${this.getExportHtmlContent()}
                     // 根据格式生成文件
                     let outputContent;
                     let outputFileName;
-                    let mimeType;
                     
                     switch (format) {
                         case 'pdf':
-                            // PDF 使用 HTML 格式存储，用户需用浏览器打开后打印
-                            outputFileName = `${safeFileName}.html`;
-                            mimeType = 'text/html';
-                            outputContent = this.generatePdfReadyHtml(baseName, htmlContent);
+                            // 使用 html2pdf.js 将 HTML 转换为真正的 PDF
+                            outputFileName = `${safeFileName}.pdf`;
+                            const fullPdfHtml = this.generatePdfReadyHtml(baseName, htmlContent, true);
+                            outputContent = await this.convertHtmlToPdfBlob(fullPdfHtml, baseName);
                             break;
                         case 'word':
                             outputFileName = `${safeFileName}.doc`;
-                            mimeType = 'application/msword';
                             outputContent = '\ufeff' + this.generateWordHtml(baseName, htmlContent);
                             break;
                         case 'html':
                         default:
                             outputFileName = `${safeFileName}.html`;
-                            mimeType = 'text/html';
                             outputContent = this.generateStandaloneHtml(baseName, htmlContent);
                             break;
                     }
@@ -3451,7 +3448,13 @@ ${this.getExportHtmlContent()}
                     // 写入文件到输出目录
                     const outputFileHandle = await outputDir.getFileHandle(outputFileName, { create: true });
                     const writable = await outputFileHandle.createWritable();
-                    await writable.write(outputContent);
+                    
+                    // PDF 输出是 Blob，其他格式是字符串
+                    if (outputContent instanceof Blob) {
+                        await writable.write(outputContent);
+                    } else {
+                        await writable.write(outputContent);
+                    }
                     await writable.close();
                     
                     succeeded++;
@@ -3571,8 +3574,17 @@ ${bodyContent}
     
     /**
      * 生成适合打印为 PDF 的 HTML 文件
+     * @param {string} title - 文档标题
+     * @param {string} bodyContent - HTML 正文内容
+     * @param {boolean} forBatch - 是否用于批量导出（不显示打印提示）
      */
-    generatePdfReadyHtml(title, bodyContent) {
+    generatePdfReadyHtml(title, bodyContent, forBatch = false) {
+        const printScript = forBatch ? '' : `
+<script>
+    // 提示用户打印
+    alert('请使用浏览器的打印功能 (Ctrl+P) 将此文档保存为 PDF');
+<\/script>`;
+
         return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -3588,11 +3600,7 @@ ${bodyContent}
     </style>
 </head>
 <body>
-${bodyContent}
-<script>
-    // 提示用户打印
-    alert('请使用浏览器的打印功能 (Ctrl+P) 将此文档保存为 PDF');
-<\/script>
+${bodyContent}${printScript}
 </body>
 </html>`;
     }
@@ -3668,6 +3676,54 @@ ${bodyContent}
 ${bodyContent}
 </body>
 </html>`;
+    }
+    
+    /**
+     * 使用 html2pdf.js 将 HTML 内容转换为 PDF Blob
+     * @param {string} htmlContent - 完整的 HTML 文档字符串
+     * @param {string} title - 文档标题
+     * @returns {Promise<Blob>} PDF 文件的 Blob 对象
+     */
+    async convertHtmlToPdfBlob(htmlContent, title) {
+        // 创建临时容器用于渲染 HTML
+        const container = document.createElement('div');
+        container.style.position = 'absolute';
+        container.style.left = '-9999px';
+        container.style.top = '0';
+        container.style.width = '210mm'; // A4 宽度
+        container.innerHTML = htmlContent;
+        document.body.appendChild(container);
+        
+        try {
+            // 等待图片和样式加载
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            const opt = {
+                margin: [10, 10, 10, 10],
+                filename: `${title}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false,
+                    windowWidth: 794, // A4 width in px at 96dpi
+                },
+                jsPDF: {
+                    unit: 'mm',
+                    format: 'a4',
+                    orientation: 'portrait'
+                },
+                pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+            };
+            
+            const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+            return pdfBlob;
+        } finally {
+            // 清理临时容器
+            if (container.parentNode) {
+                document.body.removeChild(container);
+            }
+        }
     }
     
     // 更新目录内容
